@@ -3,7 +3,6 @@ package com.example.hex;
 import android.os.Bundle;
 
 import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -28,7 +27,7 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
 
-        game = new HexGame(7); // or new HexGame(11) once the constructor is fixed
+        game = new HexGame();
         binding.boardView.setGame(game);
         binding.boardView.setOnCellClickListener(this::onCellClicked);
         binding.restartButton.setOnClickListener(view -> restartGame());
