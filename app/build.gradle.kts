@@ -38,6 +38,7 @@ android {
 
 dependencies {
     implementation(libs.activity.ktx)
+    implementation(libs.gson)
     implementation(libs.appcompat)
     implementation(libs.constraintlayout)
     implementation(libs.material)

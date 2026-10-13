@@ -4,13 +4,23 @@ import android.os.Bundle;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
+
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 
 import com.example.hex.databinding.ActivityMainBinding;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -23,6 +33,10 @@ public class MainActivity extends AppCompatActivity {
     private boolean aiThinking;
     // A result belongs only to the board position that requested it.
     private volatile int positionRevision;
+    private List<ModelCatalog.Level> computerLevels = Collections.emptyList();
+    private ModelCatalog.Level selectedLevel;
+    private int boardSize = 7; // Matches the first (7×7) board-size option.
+    private int modelRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,23 +64,115 @@ public class MainActivity extends AppCompatActivity {
                 restartGame();
             }
         });
-        loadModel();
+        setupBoardSizes();
+        setupComputerLevels();
         render();
     }
 
     /** Loads the single 7x7 model while the screen remains responsive. */
     private void loadModel() {
-        modelLoading = true;
+
+    }
+
+    private void setupBoardSizes() {
+        int[] sizes = {7, 11};
+        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
+                R.array.board_sizes, android.R.layout.simple_spinner_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        binding.boardSizeSpinner.setAdapter(adapter);
+        binding.boardSizeSpinner.setSelection(0, false);
+        binding.boardSizeSpinner.setOnItemSelectedListener(
+                new AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(AdapterView<?> parent, View view,
+                                               int position, long id) {
+                        if (boardSize != sizes[position]) {
+                            boardSize = sizes[position];
+                            refreshComputerLevels();
+                        }
+                    }
+
+                    @Override
+                    public void onNothingSelected(AdapterView<?> parent) {
+                        // Keep the current board size.
+                    }
+                });
+    }
+
+    private void setupComputerLevels() {
+        try {
+            computerLevels = ModelCatalog.load(getApplicationContext());
+        } catch (Exception exception) {
+            computerLevels = Collections.emptyList();
+        }
+        refreshComputerLevels();
+    }
+
+    /** Shows only computer models whose input shape matches the selected board. */
+    private void refreshComputerLevels() {
+        List<ModelCatalog.Level> matchingLevels = new ArrayList<>();
+        for (ModelCatalog.Level level : computerLevels) {
+            if (level.boardSize == boardSize) matchingLevels.add(level);
+        }
+
+        // Prefer iteration 2,620 for the default 7×7 board when it is available.
+        int defaultPosition = 0;
+        for (int i = 0; i < matchingLevels.size(); i++) {
+            if ("trained-002620".equals(matchingLevels.get(i).id)) {
+                defaultPosition = i;
+                break;
+            }
+        }
+
+        ArrayAdapter<ModelCatalog.Level> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, matchingLevels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        binding.computerLevelSpinner.setOnItemSelectedListener(null);
+        binding.computerLevelSpinner.setAdapter(adapter);
+        binding.computerLevelSpinner.setEnabled(!matchingLevels.isEmpty());
+        binding.computerLevelSpinner.setSelection(defaultPosition, false);
+        binding.computerLevelSpinner.setOnItemSelectedListener(
+                new AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(AdapterView<?> parent, View view,
+                                               int position, long id) {
+                        switchComputerLevel(
+                                (ModelCatalog.Level) parent.getItemAtPosition(position));
+                    }
+
+                    @Override
+                    public void onNothingSelected(AdapterView<?> parent) {
+                        // Keep the current selection.
+                    }
+                });
+
+        switchComputerLevel(matchingLevels.isEmpty() ? null : matchingLevels.get(defaultPosition));
+    }
+
+    /** Loads the selected model and starts a new game for its board size. */
+    private void switchComputerLevel(ModelCatalog.Level level) {
+        if (level == selectedLevel && (modelLoading || valueModel != null)) return;
+
+        selectedLevel = level;
+        int request = ++modelRequest;
+        TfliteValueModel previousModel = valueModel;
+        valueModel = null;
+        modelLoading = level != null;
+        restartGame();
+
         aiExecutor.execute(() -> {
-            TfliteValueModel loaded = null;
+            if (previousModel != null) previousModel.close();
+            if (level == null) return;
+
+            TfliteValueModel loaded;
             try {
-                loaded = new TfliteValueModel(getApplicationContext());
-            } catch (Exception ignored) {
-                // render() displays that the computer is unavailable.
+                loaded = new TfliteValueModel(getApplicationContext(), level.modelAsset);
+            } catch (Exception exception) {
+                loaded = null;
             }
             TfliteValueModel result = loaded;
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) {
+                if (request != modelRequest) {
                     if (result != null) result.close();
                     return;
                 }
@@ -134,7 +240,7 @@ public class MainActivity extends AppCompatActivity {
 
     /** Resets the current game and refreshes the screen. */
     private void restartGame() {
-        game = new HexGame();
+        game = new HexGame(boardSize);
         positionChanged();
         render();
     }
@@ -143,6 +249,8 @@ public class MainActivity extends AppCompatActivity {
     /** Refreshes the visible screen from the current game state. */
     private void render() {
         binding.boardView.setGame(game);
+        binding.boardView.setContentDescription(getString(R.string.board_description,
+                game.getSize(), game.getSize()));
 
         boolean canTap = !aiThinking && !game.isOver()
                 && (!vsAi || (!modelLoading && valueModel != null
@@ -152,12 +260,12 @@ public class MainActivity extends AppCompatActivity {
 
         if (!vsAi) {
             binding.modelText.setText(R.string.model_local);
-        } else if (modelLoading) {
-            binding.modelText.setText(R.string.model_loading);
-        } else if (valueModel == null) {
+        } else if (selectedLevel == null || valueModel == null && !modelLoading) {
             binding.modelText.setText(R.string.model_unavailable_help);
+        } else if (modelLoading) {
+            binding.modelText.setText(getString(R.string.model_loading, selectedLevel.label));
         } else {
-            binding.modelText.setText(R.string.model_ready);
+            binding.modelText.setText(selectedLevel.description);
         }
 
         if (game.getWinner() == HexGame.RED) {

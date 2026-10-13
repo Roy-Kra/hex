@@ -8,8 +8,11 @@ material = "1.14.0"
 activityKtx = "1.13.0"
 constraintlayout = "2.2.2"
 litert = "2.2.0"
+gson = "2.14.0"
+
 
 [libraries]
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -21,4 +24,3 @@ litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-
